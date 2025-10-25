@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd ">
+<mule xmlns:snowflake="http://www.mulesoft.org/schema/mule/snowflake" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd 
+http://www.mulesoft.org/schema/mule/snowflake http://www.mulesoft.org/schema/mule/snowflake/current/mule-snowflake.xsd">
     <http:listener-config name="customer-account-creation-banking-project-httpListenerConfig">
         <http:listener-connection host="0.0.0.0" port="8081" />
     </http:listener-config>
     <apikit:config name="customer-account-creation-banking-project-config" api="resource::92eeaed4-f035-48ce-962a-5ca425d5f7f7:customer-account-creation-banking-project:1.0.0:raml:zip:customer-account-creation-banking-project.raml" outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" />
-    <flow name="customer-account-creation-banking-project-main">
+    <snowflake:snowflake-config name="Snowflake_Config" doc:name="Snowflake Config" doc:id="8b3b58ba-edae-4684-9c70-b016584031f6" >
+		<snowflake:snowflake-connection accountName="LGDVKMF-IZ45854" warehouse="COMPUTE_WH" database="MULESOFT" schema="BFS" user="ITSRAM" password="Dad@1234567890" role="ACCOUNTADMIN" />
+	</snowflake:snowflake-config>
+	<flow name="customer-account-creation-banking-project-main">
         <http:listener config-ref="customer-account-creation-banking-project-httpListenerConfig" path="/api/*">
             <http:response statusCode="#[vars.httpStatus default 200]">
                 <http:headers>#[vars.outboundHeaders default {}]</http:headers>
@@ -124,15 +128,90 @@ output application/json
         </error-handler>
     </flow>
     <flow name="post:\createAccount:application\json:customer-account-creation-banking-project-config">
-        <ee:transform doc:name="Transform Message">
+		<ee:transform doc:name="Transform Message- Initiate Variables" doc:id="1881c875-7a53-4ca1-a14e-8cf68c21e1b0">
             <ee:message>
-                <ee:set-payload><![CDATA[%dw 2.0
+            </ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="customerName" ><![CDATA[%dw 2.0
+output application/java
+---
+attributes.queryParams.customerName]]></ee:set-variable>
+				<ee:set-variable variableName="bank" ><![CDATA[%dw 2.0
+output application/java
+---
+attributes.queryParams.bank]]></ee:set-variable>
+				<ee:set-variable variableName="type" ><![CDATA[%dw 2.0
+output application/java
+---
+attributes.queryParams.'type']]></ee:set-variable>
+				<ee:set-variable variableName="branchName" ><![CDATA[%dw 2.0
+output application/java
+---
+attributes.queryParams.'branchName']]></ee:set-variable>
+			</ee:variables>
+        </ee:transform>
+		<set-variable value="#[[]]" doc:name="Set Variable-empty list" doc:id="149eb5bd-b18d-4e65-93fa-28abc0f6e959" variableName="inputPayload"/>
+		<set-variable value="#[%dw 2.0&#10;output application/json&#10;---&#10;vars.inputPayload &lt;&lt; payload]" doc:name="Set Variable" doc:id="df2394e2-512d-4831-b429-1223f48a04a7" variableName="inputPayload"/>
+		<snowflake:select doc:name="Select" doc:id="5b023ab1-1097-4677-9fc9-cfe46cec4d96" config-ref="Snowflake_Config">
+			<snowflake:sql ><![CDATA[select custAccNum, bankName from bank_transactions where custAccNum = :custAccNum and bankName = :bankName]]></snowflake:sql>
+			<snowflake:input-parameters ><![CDATA[#[%dw 2.0
 output application/json
 ---
 {
-  status: "Account Created Successfully with Account Number 6546667124"
-} as Object {encoding: "UTF-8", mediaType: "application/json"}]]></ee:set-payload>
-            </ee:message>
-        </ee:transform>
+	"custAccNum" : payload.accountNum,
+	"bankName" : vars.bank
+}]]]></snowflake:input-parameters>
+		</snowflake:select>
+		<choice doc:name="Choice" doc:id="5d333c92-6baa-4f71-b453-8390c6649a39" >
+			<when expression="#[sizeOf(payload) &gt;= 1]">
+				<ee:transform doc:name="Transform Message" doc:id="b24df183-d432-4c5a-abbc-3649e7bcd281" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{(payload map ((item, index) -> {
+    status: "This " ++  item.CUSTACCNUM ++  " Number already exists with the " ++ vars.bank
+} ))}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+			<otherwise >
+				<snowflake:insert doc:name="Insert" doc:id="314d7ba8-5275-4678-b858-1e5f8ab83e17" config-ref="Snowflake_Config" >
+					<snowflake:sql ><![CDATA[insert into mulesoft.bfs.bank_transactions (CUSTNAME,CUSTACCNUM,ATMPIN,BANKNAME,ACCOUNTTYPE,IFSCCODE,BRANCHNAME,TRANSACTIONTIMESTAMP,MAILID,PHONENUMBER)
+VALUES
+(:CUSTNAME, :CUSTACCNUM, :ATMPIN, :BANKNAME, :ACCOUNTTYPE, :IFSCCODE, :BRANCHNAME, :TRANSACTIONTIMESTAMP, :MAILID, :PHONENUMBER)]]></snowflake:sql>
+					<snowflake:input-parameters ><![CDATA[#[%dw 2.0
+output application/json
+---
+
+{
+	(vars.inputPayload map (item,indes) -> 
+{
+	"CUSTNAME" : vars.customerName ,
+	"CUSTACCNUM" : item.accountNum,
+	"ATMPIN" : item.atmPin,
+	"BANKNAME" : vars.bank,
+	"ACCOUNTTYPE" : vars."type",
+	"IFSCCODE" : item.ifscCode,
+	"BRANCHNAME" : vars.branchName,
+	"TRANSACTIONTIMESTAMP" : now() as String {format: "dd-MM-yyyy, hh:mm:ss"},
+	"MAILID" : item.mailId,
+	"PHONENUMBER" : item.contact
+})
+}]]]></snowflake:input-parameters>
+				</snowflake:insert>
+				<ee:transform doc:name="Transform Message" doc:id="0cab10a2-5b42-4875-83e4-a291466f2f2d" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+
+{(	(vars.inputPayload map () -> {
+  "message": "Account Created Successfully with Account Number " ++ $.accountNum
+}))}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</otherwise>
+		</choice>
     </flow>
 </mule>
